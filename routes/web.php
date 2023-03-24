@@ -1,9 +1,15 @@
 <?php
 
 use App\Models\Designation;
+use App\Models\EmployeeExitFormInput;
 use App\Models\EmployeeRolesDesignation;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use App\Models\EmployeeOnboardingFormInput;
+use App\Models\EmployeeResignationReason;
+use App\Models\EmployeeAccess;
+use Illuminate\Support\Carbon;
 
 /*
 |--------------------------------------------------------------------------
@@ -20,20 +26,20 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('render', function () {
+Route::get('designation', function () {
 
-    // $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
-    // $spreadsheet = $reader->load('file.xlsx');
-    // $sheetData = $spreadsheet->setActiveSheetIndexByName('Emp Onboard')->toArray();
-    // $designations = array();
-    // for ($i = 1; $i < count($sheetData); $i++) {
-    //     $designation = $sheetData[$i][2];
-    //     array_push($designations, $designation);
-    // }
+    $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+    $spreadsheet = $reader->load('file.xlsx');
+    $sheetData = $spreadsheet->setActiveSheetIndexByName('Emp Onboard')->toArray();
+    $designations = array();
+    for ($i = 1; $i < count($sheetData); $i++) {
+        $designation = $sheetData[$i][2];
+        array_push($designations, $designation);
+    }
 
-    // $Unique = array_unique(array_filter($designations));
+    $Unique = array_unique(array_filter($designations));
 
-
+    print_r($Unique);
     // $dataToInsert = [];
     // foreach ($Unique as $data) {
     //     array_push($dataToInsert, ['roles_and_designation' => $data]);
@@ -43,59 +49,108 @@ Route::get('render', function () {
     // return "<h1 style = text-align:center> Data Inserted Successfully!!..</h1>";
 });
 
-Route::get('render', function () {
+// Employee On boarding insert
 
-// Load the XLSX file into a PhpSpreadsheet object
-$spreadsheet = IOFactory::load('file.xlsx');
+Route::get('employee-onboard', function () {
 
-// Get the active sheet
-$worksheet = $spreadsheet->getActiveSheet();
+    // Load the XLSX file into a PhpSpreadsheet object
+    $spreadsheet = IOFactory::load('file.xlsx');
 
-// Set the row number to print
-$rowNumber = 100;
-// Get the row iterator for the worksheet
-$rowIterator = $worksheet->getRowIterator();
+    // Get the active sheet
+    $worksheet = $spreadsheet->getActiveSheet();
 
-// Loop through the rows until you find the row to print
-foreach ($rowIterator as $row) {
-    if ($row->getRowIndex() == $rowNumber) {
-        // Get the cell iterator for the row
-        $cellIterator = $row->getCellIterator();
-        $row='';
-        // Loop through the cells in the row and print their values
-        foreach ($cellIterator as $cell) {
-            $row.=$cell->getValue() . ',';
+    //get all rows
 
-        }
-        echo $row;
+    $shetRows = $worksheet->toArray();
+    foreach ($shetRows as $row) {
+
+        // Log::info($row);
+        $formInput = new EmployeeOnboardingFormInput();
+        $formInput->employee_name = $row[0];
+        $formInput->employee_id = $row[1];
+        $formInput->roles_responsible_id = EmployeeRolesDesignation::where('roles_and_designation', $row[2])->first()->id;
+        $formInput->assigned_to_client_id = $row[3];
+        $formInput->date_of_joining = DateTime::createFromFormat('d/M/y', $row[4]);
+        $formInput->contract_start = $row[5];
+        $formInput->contract_end = $row[6];
+        $formInput->bgv_completed = $row[7];
+        $formInput->save();
+        // dd($formInput);
     }
-}
+    return "<h1 style = text-align:center> Data Inserted Successfully!!..</h1>";
 });
 
-// Load the XLSX file into a PhpSpreadsheet object
-// $spreadsheet = IOFactory::load('file.xlsx');
-
-// // Get the active sheet
-// $worksheet = $spreadsheet->getActiveSheet();
-
-// // Get the highest row number
-// $highestRow = $worksheet->getHighestRow();
-
-// // Loop through all rows and print their cell values
-// for ($row = 1; $row = $highestRow; $row++) {
-//     $cellIterator = $worksheet->getRowIterator($row)->current()->getCellIterator();
-//     $cellValue = $worksheet->getCell('B2');
-//     foreach ($cellValue as $cell) {
-
-//                 echo $cell;
-//             }
-//         // echo $cellValue;
-//         echo "<br>";
-//         echo "\n";
-//     }
-// });
+// employee Exit Insert 
 
 
+Route::get('employee-exit', function () {
+
+    // Load the XLSX file into a PhpSpreadsheet object
+    $spreadsheet = IOFactory::load('file.xlsx');
+
+    // Get the active sheet
+    $worksheet = $spreadsheet->getSheetByName('Emp Exit');
+
+    //get all rows
+
+    $shetRows = $worksheet->toArray();
+    //remove first two rows
+    array_shift($shetRows);
+    array_shift($shetRows);
+
+    foreach ($shetRows as $row) {
+        // 
+        Log::info($row);
+        $formInput = new EmployeeExitFormInput();
+        $formInput->employee_name = $row[0];
+        $formInput->employee_id = $row[1];
+        $formInput->resignation_date = DateTime::createFromFormat('d/M/y', $row[2]);
+        $formInput->separation_date = DateTime::createFromFormat('d/M/y', $row[3]);
+        $formInput->reason_for_resignation = EmployeeResignationReason::where('reason', $row[4])->first()->id;
+
+        $revokedAccess = [
+            [
+                'access_id' => 2,
+                'revoked_date' => null,
+                'detail' => $row[5]
+            ],
+            [
+                'access_id' => 6,
+                'revoked_date' => isDate($row[9]) ? DateTime::createFromFormat('d/M/y', $row[9]) : null,
+                'detail' => !isDate($row[9]) ? $row[9] : null,
+
+            ]
+
+        ];
+        $formInput->revoked_accesses = json_encode($revokedAccess);
+        $clearences=[];
+        Log::info($row[13]);
+        if($row[13]==1){
+            array_push($clearences,3);
+            // dd($formInput);
+        }
+        $formInput->clearance_received = json_encode($clearences);
+        $formInput->added_time = Carbon::now();
+        $formInput->save();
+        
+
+    }
+});
 
 
+
+
+function isDate($value)
+{
+    if (!$value) {
+        return false;
+    }
+
+    try {
+        new \DateTime($value);
+        return true;
+    } catch (\Exception $e) {
+        return false;
+    }
+}
 
